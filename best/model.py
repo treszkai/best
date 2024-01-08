@@ -17,8 +17,8 @@ import sys
 
 import arviz
 import numpy as np
-import pymc3 as pm
-from pymc3.backends.base import MultiTrace
+import pymc as pm
+from pymc.backends.base import MultiTrace
 import scipy.stats as st
 
 
@@ -62,26 +62,32 @@ class BestModel(ABC):
         """
 
         kwargs['tune'] = kwargs.get('tune', 1000)
-        pm_major, pm_minor, *_ = pm.__version__.split('.')
-        if (int(pm_major), int(pm_minor)) < (3, 7):
+        pm_major, pm_minor = map(int, pm.__version__.split('.')[:2])
+        if (pm_major, pm_minor) < (3, 7):
             kwargs.setdefault('nuts_kwargs', {'target_accept': 0.90})
         else:
             kwargs.setdefault('target_accept', 0.9)
-        max_rounds = 2
-        for r in range(max_rounds):
+
+        if pm_major < 4:
+            max_rounds = 2
+            for r in range(max_rounds):
+                with self.model:
+                    trace = pm.sample(n_samples, **kwargs)
+
+                if trace.report.ok:
+                    break
+                else:
+                    if r == 0:
+                        kwargs['tune'] = 2000
+                        print('\nDue to potentially incorrect estimates, rerunning '
+                              'sampling with {} tuning samples.\n'.format(kwargs['tune']),
+                              file=sys.stderr)
+                    else:
+                        print('\nThe samples maybe are still not totally okay. '
+                              'Try rerunning the analysis.')
+        else:
             with self.model:
                 trace = pm.sample(n_samples, **kwargs)
-
-            if trace.report.ok:
-                break
-            else:
-                if r == 0:
-                    kwargs['tune'] = 2000
-                    print('\nDue to potentially incorrect estimates, rerunning sampling '
-                          'with {} tuning samples.\n'.format(kwargs['tune']), file=sys.stderr)
-                else:
-                    print('\nThe samples maybe are still not totally okay. '
-                          'Try rerunning the analysis.')
 
         return trace
 
@@ -106,7 +112,7 @@ class BestModelOne(BestModel):
         self._nu_param = nu_mean - nu_min
 
         with pm.Model() as self._model:
-            mean = pm.Normal('Mean', mu=mu_loc, sd=mu_scale)
+            mean = pm.Normal('Mean', mu=mu_loc, sigma=mu_scale)
             logsigma = pm.Uniform('Log sigma', lower=np.log(sigma_low), upper=np.log(sigma_high))
             sigma = pm.Deterministic('Sigma', np.exp(logsigma))
             prec = sigma ** (-2)
@@ -168,8 +174,8 @@ class BestModelTwo(BestModel):
             #  distributions like pm.Normal() don't have a string "name" argument,
             #  but this is false – pm.Distribution redefined __new__, so the
             #  first argument indeed is the name (a string).
-            group1_mean = pm.Normal('Group 1 mean', mu=mu_loc, sd=mu_scale)
-            group2_mean = pm.Normal('Group 2 mean', mu=mu_loc, sd=mu_scale)
+            group1_mean = pm.Normal('Group 1 mean', mu=mu_loc, sigma=mu_scale)
+            group2_mean = pm.Normal('Group 2 mean', mu=mu_loc, sigma=mu_scale)
 
             nu = pm.Exponential('nu - %g' % nu_min, 1 / (nu_mean - nu_min)) + nu_min
             _ = pm.Deterministic('Normality', nu)
@@ -287,9 +293,13 @@ class BestResults(ABC):
         (float, float)
             The endpoints of the HPD
         """
-        az_major, az_minor, *_ = arviz.__version__.split('.')
-        if (int(az_major), int(az_minor)) >= (0, 8):
-            return tuple(arviz.hdi(self.trace[var_name], hdi_prob=credible_mass))
+        az_major, az_minor = map(int, arviz.__version__.split('.')[:2])
+        if (az_major, az_minor) >= (0, 8):
+            hdi = arviz.hdi(self.trace, var_names=[var_name], hdi_prob=credible_mass)
+            if isinstance(hdi, np.narray):
+                return tuple(hdi)
+            else:
+                return hdi[var_name].values[0], hdi[var_name].values[1]
         else:
             return tuple(arviz.hpd(self.trace[var_name], credible_interval=credible_mass))
 
@@ -336,7 +346,7 @@ class BestResults(ABC):
 
         meaning the answer is accurate for most practical purposes.
         """
-        samples = self.trace[var_name]
+        samples = self.trace.posterior[var_name]
         n_match = len(samples[(low < samples) * (samples < high)])
         n_all = len(samples)
         return n_match / n_all
@@ -355,7 +365,7 @@ class BestResults(ABC):
         float
             The posterior mode.
         """
-        samples = self.trace[var_name]
+        samples = arviz.extract(self.trace.posterior[var_name]).to_dataarray()
 
         # calculate mode using kernel density estimate
         kernel = st.gaussian_kde(samples)

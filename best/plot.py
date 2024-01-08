@@ -18,6 +18,7 @@ import numpy as np
 import matplotlib.lines as mpllines
 from matplotlib.transforms import blended_transform_factory
 import scipy.stats as st
+import arviz
 
 from .model import BestResults, BestResultsOne, BestResultsTwo
 
@@ -88,7 +89,7 @@ def plot_posterior(best_results: BestResults,
         ...                          color='avocado')
         >>> plt.show()
     """
-    samples = best_results.trace[var_name]
+    samples = arviz.extract(best_results.trace.posterior, var_names=var_name)
     samples_min, samples_max = best_results.hdi(var_name, DISPLAYED_MASS)
     samples = samples[(samples_min <= samples) * (samples <= samples_max)]
 
@@ -253,9 +254,9 @@ def plot_data_and_prediction(best_results: BestResults,
     trace = best_results.trace
 
     if isinstance(best_results, BestResultsTwo):
-        means = trace['Group %d mean' % group_id]
-        sigmas = trace['Group %d sigma' % group_id]
-        nus = trace['Normality']
+        means = arviz.extract(trace, var_names=['Group %d mean' % group_id])
+        sigmas = arviz.extract(trace, var_names=['Group %d sigma' % group_id])
+        nus = arviz.extract(trace, var_names=['Normality'])
     elif isinstance(best_results, BestResultsOne):
         means = trace['Mean']
         sigmas = trace['Sigma']
@@ -355,15 +356,16 @@ def plot_all_two(best_results: BestResultsTwo,
     assert type(bins) is int, 'bins argument must be an integer.'
 
     trace = best_results.trace
+    posterior = trace.posterior
 
-    posterior_mean1 = trace['Group 1 mean']
-    posterior_mean2 = trace['Group 2 mean']
+    posterior_mean1 = posterior['Group 1 mean']
+    posterior_mean2 = posterior['Group 2 mean']
 
     posterior_means = np.concatenate((posterior_mean1, posterior_mean2))
     _, bin_edges_means = np.histogram(posterior_means, bins=bins)
 
-    posterior_std1 = trace['Group 1 SD']
-    posterior_std2 = trace['Group 2 SD']
+    posterior_std1 = posterior['Group 1 SD']
+    posterior_std2 = posterior['Group 2 SD']
 
     std1_min, std1_max = best_results.hdi('Group 1 SD', DISPLAYED_MASS)
     std2_min, std2_max = best_results.hdi('Group 2 SD', DISPLAYED_MASS)
@@ -375,7 +377,7 @@ def plot_all_two(best_results: BestResultsTwo,
 
     fig, axes = plt.subplots(5, 2, figsize=(8.2, 11))
 
-    axes[0, 0].get_shared_x_axes().join(axes[0, 0], axes[1, 0])
+    axes[0, 0].sharex(axes[1, 0])
 
     plot_posterior(best_results,
                    'Group 1 mean',
@@ -393,7 +395,7 @@ def plot_all_two(best_results: BestResultsTwo,
                    title='%s mean' % group2_name,
                    label=r'$\mu_2$')
 
-    axes[2, 0].get_shared_x_axes().join(axes[2, 0], axes[3, 0])
+    axes[2, 0].sharex(axes[3, 0])
 
     plot_posterior(best_results,
                    'Group 1 SD',
@@ -441,7 +443,7 @@ def plot_all_two(best_results: BestResultsTwo,
     obs_vals = np.concatenate((group1_data, group2_data))
     bin_edges = np.linspace(np.min(obs_vals), np.max(obs_vals), bins + 1)
 
-    axes[0, 1].get_shared_x_axes().join(axes[0, 1], axes[1, 1])
+    axes[0, 1].sharex(axes[1, 1])
 
     plot_data_and_prediction(best_results, 1,
                              ax=axes[0, 1],
