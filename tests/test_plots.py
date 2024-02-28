@@ -1,8 +1,7 @@
-import pickle
-import os
 from pathlib import Path
 
 import numpy as np
+from arviz import InferenceData
 import pytest
 
 import best
@@ -12,8 +11,8 @@ import best
 def data_dir():
     dir_path = Path(__file__).parent / 'data'
 
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
+    if not dir_path.exists():
+        dir_path.mkdir()
 
     return dir_path
 
@@ -29,23 +28,22 @@ def test_plot_all_one(data_dir):
     evening = [9.82, 9.34, 9.73, 9.93, 9.33, 9.41, 9.48, 9.14, 8.62, 8.60,
                9.60, 9.41, 8.43, 9.77, 8.96, 9.81, 9.75, 9.50, 9.90, 9.13]
 
-    filename = os.path.join(data_dir, 'results_one.bin')
+    filename = data_dir / 'results_one.cdf'
 
-    try:
-        with open(filename, "rb") as f:
-            best_out = pickle.load(f)
-            print('Previous analysis loaded from "%s"' % filename)
-    except (FileNotFoundError, EOFError, pickle.UnpicklingError):
+    if filename.exists():
+        model = best.BestModelOne(np.subtract(evening, morning), 0)
+        trace = InferenceData.from_netcdf(filename)
+        print('Previous analysis loaded from "%s"' % filename)
+        best_out = best.BestResultsOne(model, trace)
+    else:
         print("Performing Bayesian analysis")
         best_out = best.analyze_one(np.subtract(evening, morning))
-
         print('Saving results to "%s"' % filename)
-        with open(filename, "wb") as f:
-            pickle.dump(best_out, f)
+        best_out._trace.to_netcdf(filename)
 
     # Check that plotting doesn’t raise any exceptions
     fig = best.plot_all(best_out)
-    fig.savefig(os.path.join(data_dir, 'plot_all_one.pdf'))
+    fig.savefig(data_dir / 'plot_all_one.pdf')
 
 
 def test_plot_all_two(data_dir):
@@ -58,23 +56,22 @@ def test_plot_all_two(data_dir):
                97, 101, 101, 100, 101, 99, 101, 100, 100, 101, 100, 99,
                101, 100, 102, 99, 100, 99]
 
-    filename = os.path.join(data_dir, 'results_two.bin')
+    filename = data_dir / 'results_two.cdf'
 
-    try:
-        with open(filename, "rb") as f:
-            best_out = pickle.load(f)
-            print('Previous analysis loaded from "%s"' % filename)
-    except (FileNotFoundError, EOFError, pickle.UnpicklingError):
+    if filename.exists():
+        model = best.BestModelTwo(drug, placebo)
+        trace = InferenceData.from_netcdf(filename)
+        print('Previous analysis loaded from "%s"' % filename)
+        best_out = best.BestResultsTwo(model, trace)
+    else:
         print("Performing Bayesian analysis")
         best_out = best.analyze_two(drug, placebo)
-
         print('Saving results to "%s"' % filename)
-        with open(filename, "wb") as f:
-            pickle.dump(best_out, f)
+        best_out._trace.to_netcdf(filename)
 
     # Check that plotting doesn’t raise any exceptions
     fig = best.plot_all(best_out)
-    fig.savefig(os.path.join(data_dir, 'plot_all_two.pdf'))
+    fig.savefig(data_dir / 'plot_all_two.pdf')
 
 
 def test_plot_posterior(data_dir):
@@ -88,20 +85,19 @@ def test_plot_posterior(data_dir):
     evening = [9.82, 9.34, 9.73, 9.93, 9.33, 9.41, 9.48, 9.14, 8.62, 8.60,
                9.60, 9.41, 8.43, 9.77, 8.96, 9.81, 9.75, 9.50, 9.90, 9.13]
 
-    filename = os.path.join(data_dir, 'results_one.bin')
+    filename = data_dir / 'results_one.cdf'
 
-    try:
-        with open(filename, "rb") as f:
-            best_out = pickle.load(f)
-            print('Previous analysis loaded from "%s"' % filename)
-    except (FileNotFoundError, EOFError, pickle.UnpicklingError):
+    if filename.exists():
+        model = best.BestModelOne(np.subtract(evening, morning), 0)
+        trace = InferenceData.from_netcdf(filename)
+        print('Previous analysis loaded from "%s"' % filename)
+        best_out = best.BestResultsOne(model, trace)
+    else:
         print("Performing Bayesian analysis")
         best_out = best.analyze_one(np.subtract(evening, morning))
-
         print('Saving results to "%s"' % filename)
-        with open(filename, "wb") as f:
-            pickle.dump(best_out, f)
+        best_out._trace.to_netcdf(filename)
 
     # Check that plotting doesn’t raise any exceptions
     ax = best.plot_posterior(best_out, 'Mean')
-    ax.get_figure().savefig(os.path.join(data_dir, 'plot_posterior.pdf'))
+    ax.get_figure().savefig(data_dir / 'plot_posterior.pdf')

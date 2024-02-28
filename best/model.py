@@ -18,7 +18,7 @@ import sys
 import arviz
 import numpy as np
 import pymc as pm
-from pymc.backends.base import MultiTrace
+from arviz import InferenceData
 import scipy.stats as st
 
 
@@ -55,39 +55,17 @@ class BestModel(ABC):
     def __str__(self):
         pass
 
-    def sample(self, n_samples: int, **kwargs) -> MultiTrace:
+    def sample(self, n_samples: int, **kwargs) -> InferenceData:
         """Draw posterior samples from the model
 
         (This method is accessible primarily for internal purposes.)
         """
 
         kwargs['tune'] = kwargs.get('tune', 1000)
-        pm_major, pm_minor = map(int, pm.__version__.split('.')[:2])
-        if (pm_major, pm_minor) < (3, 7):
-            kwargs.setdefault('nuts_kwargs', {'target_accept': 0.90})
-        else:
-            kwargs.setdefault('target_accept', 0.9)
+        kwargs.setdefault('target_accept', 0.9)
 
-        if pm_major < 4:
-            max_rounds = 2
-            for r in range(max_rounds):
-                with self.model:
-                    trace = pm.sample(n_samples, **kwargs)
-
-                if trace.report.ok:
-                    break
-                else:
-                    if r == 0:
-                        kwargs['tune'] = 2000
-                        print('\nDue to potentially incorrect estimates, rerunning '
-                              'sampling with {} tuning samples.\n'.format(kwargs['tune']),
-                              file=sys.stderr)
-                    else:
-                        print('\nThe samples maybe are still not totally okay. '
-                              'Try rerunning the analysis.')
-        else:
-            with self.model:
-                trace = pm.sample(n_samples, **kwargs)
+        with self.model:
+            trace = pm.sample(n_samples, **kwargs)
 
         return trace
 
@@ -236,7 +214,7 @@ class BestModelTwo(BestModel):
 
 class BestResults(ABC):
     """Results of an analysis"""
-    def __init__(self, model: BestModel, trace: MultiTrace):
+    def __init__(self, model: BestModel, trace: InferenceData):
         self._model = model
         self._trace = trace
 
@@ -245,11 +223,11 @@ class BestResults(ABC):
         return self._model
 
     @property
-    def trace(self) -> MultiTrace:
+    def trace(self) -> InferenceData:
         """The collection of posterior samples
 
-        See the relevant `PyMC3 documentation
-        <https://docs.pymc.io/api/inference.html#multitrace>`_ for details.
+        See the relevant `arviz documentation
+        <https://python.arviz.org/en/latest/api/generated/arviz.InferenceData.html>`_ for details.
         """
         return self._trace
 
@@ -293,15 +271,11 @@ class BestResults(ABC):
         (float, float)
             The endpoints of the HPD
         """
-        az_major, az_minor = map(int, arviz.__version__.split('.')[:2])
-        if (az_major, az_minor) >= (0, 8):
-            hdi = arviz.hdi(self.trace, var_names=[var_name], hdi_prob=credible_mass)
-            if isinstance(hdi, np.narray):
-                return tuple(hdi)
-            else:
-                return hdi[var_name].values[0], hdi[var_name].values[1]
+        hdi = arviz.hdi(self.trace, var_names=[var_name], hdi_prob=credible_mass)
+        if isinstance(hdi, np.ndarray):
+            return tuple(hdi)
         else:
-            return tuple(arviz.hpd(self.trace[var_name], credible_interval=credible_mass))
+            return hdi[var_name].values[0], hdi[var_name].values[1]
 
     def posterior_prob(self, var_name: str, low: float = -np.inf, high: float = np.inf):
         r"""Calculate the posterior probability that a variable is in a given interval
@@ -346,13 +320,12 @@ class BestResults(ABC):
 
         meaning the answer is accurate for most practical purposes.
         """
-        samples = self.trace.posterior[var_name]
+        samples = self.trace[var_name]
         n_match = len(samples[(low < samples) * (samples < high)])
         n_all = len(samples)
         return n_match / n_all
 
-    def posterior_mode(self,
-                       var_name: str):
+    def posterior_mode(self, var_name: str):
         """Calculate the posterior mode of a variable
 
         Parameters
@@ -386,14 +359,14 @@ class BestResults(ABC):
 class BestResultsOne(BestResults):
     """Results of a two-group analysis; subclass of :class:`BestResults`"""
 
-    def __init__(self, model: BestModelOne, trace: MultiTrace):
+    def __init__(self, model: BestModelOne, trace: InferenceData):
         super().__init__(model, trace)
 
 
 class BestResultsTwo(BestResults):
     """Results of a two-group analysis; subclass of :class:`BestResults`"""
 
-    def __init__(self, model: BestModelTwo, trace: MultiTrace):
+    def __init__(self, model: BestModelTwo, trace: InferenceData):
         super().__init__(model, trace)
 
     def observed_data(self, group_id):

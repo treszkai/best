@@ -145,7 +145,7 @@ def plot_posterior(best_results: BestResults,
 
     # make it pretty
     ax.spines['bottom'].set_position(('outward', 2))
-    for loc in ['left', 'top', 'right']:
+    for loc in 'left', 'top', 'right':
         ax.spines[loc].set_color('none')  # don't draw
     ax.xaxis.set_ticks_position('bottom')
     ax.yaxis.set_ticks([])  # don't draw
@@ -258,9 +258,9 @@ def plot_data_and_prediction(best_results: BestResults,
         sigmas = arviz.extract(trace, var_names=['Group %d sigma' % group_id])
         nus = arviz.extract(trace, var_names=['Normality'])
     elif isinstance(best_results, BestResultsOne):
-        means = trace['Mean']
-        sigmas = trace['Sigma']
-        nus = trace['Normality']
+        means = arviz.extract(trace, var_names=['Mean'])
+        sigmas = arviz.extract(trace, var_names=['Sigma'])
+        nus = arviz.extract(trace, var_names=['Normality'])
     else:
         raise ValueError('Unknown type of best_results argument')
 
@@ -309,7 +309,7 @@ def plot_data_and_prediction(best_results: BestResults,
             verticalalignment='top'
             )
 
-    for loc in ['top', 'right']:
+    for loc in 'top', 'right':
         ax.spines[loc].set_color('none')  # don't draw
     ax.spines['left'].set_color('gray')
     ax.set_xlabel('Observation')
@@ -355,8 +355,7 @@ def plot_all_two(best_results: BestResultsTwo,
     """
     assert type(bins) is int, 'bins argument must be an integer.'
 
-    trace = best_results.trace
-    posterior = trace.posterior
+    posterior = best_results.trace.posterior
 
     posterior_mean1 = posterior['Group 1 mean']
     posterior_mean2 = posterior['Group 2 mean']
