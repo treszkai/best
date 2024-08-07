@@ -17,8 +17,8 @@ import sys
 
 import arviz
 import numpy as np
-import pymc3 as pm
-from pymc3.backends.base import MultiTrace
+import pymc as pm
+from arviz import InferenceData
 import scipy.stats as st
 
 
@@ -55,35 +55,43 @@ class BestModel(ABC):
     def __str__(self):
         pass
 
-    def sample(self, n_samples: int, **kwargs) -> MultiTrace:
+    def sample(self, n_samples: int, **kwargs) -> InferenceData:
         """Draw posterior samples from the model
 
         (This method is accessible primarily for internal purposes.)
         """
 
         kwargs['tune'] = kwargs.get('tune', 1000)
-        pm_major, pm_minor, *_ = pm.__version__.split('.')
-        if (int(pm_major), int(pm_minor)) < (3, 7):
-            kwargs.setdefault('nuts_kwargs', {'target_accept': 0.90})
-        else:
-            kwargs.setdefault('target_accept', 0.9)
-        max_rounds = 2
+        kwargs.setdefault('target_accept', 0.9)
+
+        max_rounds = 3
+        traces = {}
         for r in range(max_rounds):
             with self.model:
-                trace = pm.sample(n_samples, **kwargs)
+                trace = pm.sample(n_samples, keep_warning_stat=True, **kwargs)
 
-            if trace.report.ok:
-                break
+            if not trace.sample_stats['diverging'].any():
+                return trace
             else:
-                if r == 0:
-                    kwargs['tune'] = 2000
-                    print('\nDue to potentially incorrect estimates, rerunning sampling '
-                          'with {} tuning samples.\n'.format(kwargs['tune']), file=sys.stderr)
-                else:
-                    print('\nThe samples maybe are still not totally okay. '
-                          'Try rerunning the analysis.')
+                traces[r] = trace
+                if r < max_rounds - 1:
+                    kwargs['tune'] *= 2
+                    kwargs['tune'] = max(kwargs['tune'], 1000)
+                    print('\nDue to potentially incorrect estimates, rerunning '
+                          'sampling with {} tuning samples.\n'.format(kwargs['tune']),
+                          file=sys.stderr)
 
-        return trace
+        def diverging_samples_ratio(t):
+            diverging = t.sample_stats['diverging']
+            return diverging.sum() / diverging.size
+
+        best_trace = min(traces.values(), key=diverging_samples_ratio)
+        print(
+            f'\n{diverging_samples_ratio(best_trace).values * 100:.1f}% of the samples are diverging. '
+            'Probably the normal distribution doesn’t fit the data well.',
+            file=sys.stderr,
+        )
+        return best_trace
 
 
 class BestModelOne(BestModel):
@@ -106,7 +114,7 @@ class BestModelOne(BestModel):
         self._nu_param = nu_mean - nu_min
 
         with pm.Model() as self._model:
-            mean = pm.Normal('Mean', mu=mu_loc, sd=mu_scale)
+            mean = pm.Normal('Mean', mu=mu_loc, sigma=mu_scale)
             logsigma = pm.Uniform('Log sigma', lower=np.log(sigma_low), upper=np.log(sigma_high))
             sigma = pm.Deterministic('Sigma', np.exp(logsigma))
             prec = sigma ** (-2)
@@ -168,8 +176,8 @@ class BestModelTwo(BestModel):
             #  distributions like pm.Normal() don't have a string "name" argument,
             #  but this is false – pm.Distribution redefined __new__, so the
             #  first argument indeed is the name (a string).
-            group1_mean = pm.Normal('Group 1 mean', mu=mu_loc, sd=mu_scale)
-            group2_mean = pm.Normal('Group 2 mean', mu=mu_loc, sd=mu_scale)
+            group1_mean = pm.Normal('Group 1 mean', mu=mu_loc, sigma=mu_scale)
+            group2_mean = pm.Normal('Group 2 mean', mu=mu_loc, sigma=mu_scale)
 
             nu = pm.Exponential('nu - %g' % nu_min, 1 / (nu_mean - nu_min)) + nu_min
             _ = pm.Deterministic('Normality', nu)
@@ -230,7 +238,7 @@ class BestModelTwo(BestModel):
 
 class BestResults(ABC):
     """Results of an analysis"""
-    def __init__(self, model: BestModel, trace: MultiTrace):
+    def __init__(self, model: BestModel, trace: InferenceData):
         self._model = model
         self._trace = trace
 
@@ -239,11 +247,11 @@ class BestResults(ABC):
         return self._model
 
     @property
-    def trace(self) -> MultiTrace:
+    def trace(self) -> InferenceData:
         """The collection of posterior samples
 
-        See the relevant `PyMC3 documentation
-        <https://docs.pymc.io/api/inference.html#multitrace>`_ for details.
+        See the relevant `arviz documentation
+        <https://python.arviz.org/en/latest/api/generated/arviz.InferenceData.html>`_ for details.
         """
         return self._trace
 
@@ -267,7 +275,7 @@ class BestResults(ABC):
         """
         return arviz.summary(self.trace, hdi_prob=credible_mass)
 
-    def hdi(self, var_name: str, credible_mass: float = 0.95):
+    def hdi(self, var_name: str, credible_mass: float = 0.95) -> tuple[float, float]:
         """Calculate the highest posterior density interval (HDI)
 
         This function calculates a *credible interval* which contains the
@@ -285,13 +293,11 @@ class BestResults(ABC):
         Returns
         -------
         (float, float)
-            The endpoints of the HPD
+            The endpoints of the HDI
         """
-        az_major, az_minor, *_ = arviz.__version__.split('.')
-        if (int(az_major), int(az_minor)) >= (0, 8):
-            return tuple(arviz.hdi(self.trace[var_name], hdi_prob=credible_mass))
-        else:
-            return tuple(arviz.hpd(self.trace[var_name], credible_interval=credible_mass))
+        from arviz import InferenceData
+        hdi = arviz.hdi(self.trace, var_names=[var_name], hdi_prob=credible_mass)
+        return tuple(hdi[var_name].values)
 
     def posterior_prob(self, var_name: str, low: float = -np.inf, high: float = np.inf):
         r"""Calculate the posterior probability that a variable is in a given interval
@@ -341,8 +347,7 @@ class BestResults(ABC):
         n_all = len(samples)
         return n_match / n_all
 
-    def posterior_mode(self,
-                       var_name: str):
+    def posterior_mode(self, var_name: str):
         """Calculate the posterior mode of a variable
 
         Parameters
@@ -355,7 +360,7 @@ class BestResults(ABC):
         float
             The posterior mode.
         """
-        samples = self.trace[var_name]
+        samples = arviz.extract(self.trace.posterior, var_names=var_name)
 
         # calculate mode using kernel density estimate
         kernel = st.gaussian_kde(samples)
@@ -376,14 +381,14 @@ class BestResults(ABC):
 class BestResultsOne(BestResults):
     """Results of a two-group analysis; subclass of :class:`BestResults`"""
 
-    def __init__(self, model: BestModelOne, trace: MultiTrace):
+    def __init__(self, model: BestModelOne, trace: InferenceData):
         super().__init__(model, trace)
 
 
 class BestResultsTwo(BestResults):
     """Results of a two-group analysis; subclass of :class:`BestResults`"""
 
-    def __init__(self, model: BestModelTwo, trace: MultiTrace):
+    def __init__(self, model: BestModelTwo, trace: InferenceData):
         super().__init__(model, trace)
 
     def observed_data(self, group_id):
