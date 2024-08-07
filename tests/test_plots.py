@@ -39,7 +39,7 @@ def test_plot_all_one(data_dir):
         print("Performing Bayesian analysis")
         best_out = best.analyze_one(np.subtract(evening, morning))
         print('Saving results to "%s"' % filename)
-        best_out._trace.to_netcdf(filename)
+        best_out.trace.to_netcdf(filename)
 
     # Check that plotting doesn’t raise any exceptions
     fig = best.plot_all(best_out)
@@ -67,7 +67,7 @@ def test_plot_all_two(data_dir):
         print("Performing Bayesian analysis")
         best_out = best.analyze_two(drug, placebo)
         print('Saving results to "%s"' % filename)
-        best_out._trace.to_netcdf(filename)
+        best_out.trace.to_netcdf(filename)
 
     # Check that plotting doesn’t raise any exceptions
     fig = best.plot_all(best_out)
@@ -96,7 +96,7 @@ def test_plot_posterior(data_dir):
         print("Performing Bayesian analysis")
         best_out = best.analyze_one(np.subtract(evening, morning))
         print('Saving results to "%s"' % filename)
-        best_out._trace.to_netcdf(filename)
+        best_out.trace.to_netcdf(filename)
 
     # Check that plotting doesn’t raise any exceptions
     ax = best.plot_posterior(best_out, 'Mean')
