@@ -20,12 +20,12 @@ setup(
             'Operating System :: OS Independent',
     ],
     license='MIT',
-    python_requires='>=3.7',
+    python_requires='>=3.9',
     install_requires=[
         'arviz>=0.15.0',
         'numpy',
         'scipy',
         'matplotlib>=3.0.0',
-        'pymc3>=5',
+        'pymc>=5',
     ],
 )
