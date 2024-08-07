@@ -336,7 +336,7 @@ class BestResults(ABC):
         float
             The posterior mode.
         """
-        samples = arviz.extract(self.trace.posterior[var_name]).to_dataarray()
+        samples = arviz.extract(self.trace.posterior, var_names=var_name)
 
         # calculate mode using kernel density estimate
         kernel = st.gaussian_kde(samples)
