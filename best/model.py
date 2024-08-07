@@ -64,10 +64,34 @@ class BestModel(ABC):
         kwargs['tune'] = kwargs.get('tune', 1000)
         kwargs.setdefault('target_accept', 0.9)
 
-        with self.model:
-            trace = pm.sample(n_samples, **kwargs)
+        max_rounds = 3
+        traces = {}
+        for r in range(max_rounds):
+            with self.model:
+                trace = pm.sample(n_samples, keep_warning_stat=True, **kwargs)
 
-        return trace
+            if not trace.sample_stats['diverging'].any():
+                return trace
+            else:
+                traces[r] = trace
+                if r < max_rounds - 1:
+                    kwargs['tune'] *= 2
+                    kwargs['tune'] = max(kwargs['tune'], 1000)
+                    print('\nDue to potentially incorrect estimates, rerunning '
+                          'sampling with {} tuning samples.\n'.format(kwargs['tune']),
+                          file=sys.stderr)
+
+        def diverging_samples_ratio(t):
+            diverging = t.sample_stats['diverging']
+            return diverging.sum() / diverging.size
+
+        best_trace = min(traces.values(), key=diverging_samples_ratio)
+        print(
+            f'\n{diverging_samples_ratio(best_trace).values * 100:.1f}% of the samples are diverging. '
+            'Probably the normal distribution doesn’t fit the data well.',
+            file=sys.stderr,
+        )
+        return best_trace
 
 
 class BestModelOne(BestModel):
