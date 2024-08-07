@@ -251,7 +251,7 @@ class BestResults(ABC):
         """
         return arviz.summary(self.trace, hdi_prob=credible_mass)
 
-    def hdi(self, var_name: str, credible_mass: float = 0.95):
+    def hdi(self, var_name: str, credible_mass: float = 0.95) -> tuple[float, float]:
         """Calculate the highest posterior density interval (HDI)
 
         This function calculates a *credible interval* which contains the
@@ -269,13 +269,11 @@ class BestResults(ABC):
         Returns
         -------
         (float, float)
-            The endpoints of the HPD
+            The endpoints of the HDI
         """
+        from arviz import InferenceData
         hdi = arviz.hdi(self.trace, var_names=[var_name], hdi_prob=credible_mass)
-        if isinstance(hdi, np.ndarray):
-            return tuple(hdi)
-        else:
-            return hdi[var_name].values[0], hdi[var_name].values[1]
+        return tuple(hdi[var_name].values)
 
     def posterior_prob(self, var_name: str, low: float = -np.inf, high: float = np.inf):
         r"""Calculate the posterior probability that a variable is in a given interval
